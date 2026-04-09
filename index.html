@@ -2106,41 +2106,63 @@ let usingCloud=false;
 // ── TWILIO DIALER ─────────────────────────────────────────
 let twilioDevice=null,activeCall=null,dialerOpen=false,callTimer=null,callSeconds=0,currentCallLeadId=null,isMuted=false;
 
+function loadScript(src){
+  return new Promise((resolve,reject)=>{
+    if(document.querySelector('script[src="'+src+'"]')){resolve();return;}
+    const s=document.createElement('script');
+    s.src=src;s.onload=resolve;s.onerror=reject;
+    document.head.appendChild(s);
+  });
+}
+
 async function initTwilio(){
   try{
+    setDialerStatus('Loading...','');
+    
+    // Load Twilio SDK dynamically
+    await loadScript('https://sdk.twilio.com/js/client/v1.14/twilio.js');
+    
+    // Small delay to ensure SDK is ready
+    await new Promise(r=>setTimeout(r,500));
+    
+    if(typeof Twilio==='undefined'){
+      setDialerStatus('SDK failed','');
+      return;
+    }
+    
     setDialerStatus('Connecting...','');
+    
     const res=await fetch('/api/twilio-token',{method:'POST',headers:{'Content-Type':'application/json'}});
     const data=await res.json();
     if(!data.token){setDialerStatus('Token error','');return;}
     
-    // Wait for Twilio SDK to load
-    if(typeof Twilio==='undefined'){setDialerStatus('SDK loading...','');setTimeout(initTwilio,2000);return;}
-    
-    const Device=Twilio.Device;
-    twilioDevice=new Device(data.token,{
-      codecPreferences:['opus','pcmu'],
-      enableRingingState:true,
-      allowIncomingWhileBusy:false
+    // Use Twilio Client (v1) which is more stable
+    Twilio.Device.setup(data.token, {
+      codecPreferences: ['opus','pcmu'],
+      enableRingingState: true
     });
     
-    twilioDevice.on('error',(e)=>{
-      console.error('Twilio error:',e.code, e.message);
-      setDialerStatus('Error: '+e.message,'');
-    });
-    
-    twilioDevice.on('registered',()=>{
+    Twilio.Device.ready(()=>{
+      twilioDevice = Twilio.Device;
       setDialerStatus('Ready','ready');
     });
-
-    twilioDevice.on('unregistered',()=>{
-      setDialerStatus('Disconnected','');
+    
+    Twilio.Device.error((e)=>{
+      console.error('Twilio error:',e);
+      setDialerStatus('Error','');
     });
     
-    await twilioDevice.register();
-    setDialerStatus('Ready','ready');
+    Twilio.Device.disconnect(()=>{
+      onCallEnded();
+    });
+    
+    Twilio.Device.connect(()=>{
+      onCallConnected();
+    });
+    
   }catch(e){
     console.error('Twilio init error:',e);
-    setDialerStatus('Failed: '+e.message,'');
+    setDialerStatus('Error: '+e.message,'');
   }
 }
 
@@ -2164,15 +2186,35 @@ function openDialerForLead(leadId,name,phone){
 async function dialerCall(){
   const num=document.getElementById('dialer-input').value.replace(/[^0-9+]/g,'');
   if(!num){alert('Enter a phone number');return;}
-  if(!twilioDevice){await initTwilio();}
+  
+  // If device not ready, init and wait
+  if(!twilioDevice){
+    setDialerStatus('Connecting...','');
+    await initTwilio();
+    // Wait up to 5 seconds for device to register
+    let waited=0;
+    while(!twilioDevice && waited<5000){
+      await new Promise(r=>setTimeout(r,500));
+      waited+=500;
+    }
+  }
+  
+  if(!twilioDevice){setDialerStatus('Not ready — try again','');return;}
+  
   try{
     setDialerStatus('Calling...','calling');
-    const call=await twilioDevice.connect({params:{To:num}});
-    activeCall=call;
-    call.on('accept',onCallConnected);
-    call.on('disconnect',onCallEnded);
-    call.on('error',(e)=>{console.error(e);onCallEnded();});
-  }catch(e){console.error(e);setDialerStatus('Failed','');}
+    const formattedNum = num.startsWith('+')?num:'+1'+num;
+    activeCall = Twilio.Device.connect({To: formattedNum});
+    if(activeCall){
+      activeCall.on('accept', onCallConnected);
+      activeCall.on('disconnect', onCallEnded);
+      activeCall.on('error',(e)=>{console.error(e);onCallEnded();});
+      onCallConnected();
+    }
+  }catch(e){
+    console.error('Call error:',e);
+    setDialerStatus('Failed: '+e.message,'');
+  }
 }
 
 function onCallConnected(){
@@ -2205,7 +2247,7 @@ function onCallEnded(){
   setDialerStatus('Ready','ready');
 }
 
-function dialerHangup(){if(activeCall){activeCall.disconnect();activeCall=null;}}
+function dialerHangup(){if(activeCall){activeCall.disconnect();activeCall=null;}else if(typeof Twilio!=="undefined"){Twilio.Device.disconnectAll();}}
 
 function dialerMute(){
   if(!activeCall)return;
