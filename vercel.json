@@ -8,6 +8,14 @@
           "value": "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;"
         }
       ]
+    },
+    {
+      "source": "/styles.css",
+      "headers": [{ "key": "Content-Type", "value": "text/css" }]
+    },
+    {
+      "source": "/app.js",
+      "headers": [{ "key": "Content-Type", "value": "application/javascript" }]
     }
   ],
   "rewrites": [
