@@ -2108,15 +2108,40 @@ let twilioDevice=null,activeCall=null,dialerOpen=false,callTimer=null,callSecond
 
 async function initTwilio(){
   try{
+    setDialerStatus('Connecting...','');
     const res=await fetch('/api/twilio-token',{method:'POST',headers:{'Content-Type':'application/json'}});
     const data=await res.json();
     if(!data.token){setDialerStatus('Token error','');return;}
-    const {Device}=Twilio;
-    twilioDevice=new Device(data.token,{codecPreferences:['opus','pcmu']});
-    twilioDevice.on('error',(e)=>{console.error('Twilio:',e);setDialerStatus('Error','');});
+    
+    // Wait for Twilio SDK to load
+    if(typeof Twilio==='undefined'){setDialerStatus('SDK loading...','');setTimeout(initTwilio,2000);return;}
+    
+    const Device=Twilio.Device;
+    twilioDevice=new Device(data.token,{
+      codecPreferences:['opus','pcmu'],
+      enableRingingState:true,
+      allowIncomingWhileBusy:false
+    });
+    
+    twilioDevice.on('error',(e)=>{
+      console.error('Twilio error:',e.code, e.message);
+      setDialerStatus('Error: '+e.message,'');
+    });
+    
+    twilioDevice.on('registered',()=>{
+      setDialerStatus('Ready','ready');
+    });
+
+    twilioDevice.on('unregistered',()=>{
+      setDialerStatus('Disconnected','');
+    });
+    
     await twilioDevice.register();
     setDialerStatus('Ready','ready');
-  }catch(e){console.error('Twilio init:',e);setDialerStatus('Unavailable','');}
+  }catch(e){
+    console.error('Twilio init error:',e);
+    setDialerStatus('Failed: '+e.message,'');
+  }
 }
 
 function toggleDialer(){
