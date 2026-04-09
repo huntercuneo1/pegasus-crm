@@ -525,6 +525,44 @@ tbody tr:hover td{background:var(--surface2)}
 .report-mini-val{font-size:22px;font-weight:700;letter-spacing:-.03em;margin-bottom:2px}
 .report-mini-label{font-size:11px;color:var(--text3)}
 
+
+/* ── DIALER ── */
+.dialer-widget{position:fixed;bottom:24px;right:24px;z-index:500;font-family:'Outfit',sans-serif}
+.dialer-btn{width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#22c55e,#16a34a);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(34,197,94,0.4);transition:all .2s;color:white;font-size:20px}
+.dialer-btn:hover{transform:scale(1.08)}
+.dialer-btn.active{background:linear-gradient(135deg,#ef4444,#dc2626);box-shadow:0 4px 16px rgba(239,68,68,0.4)}
+.dialer-panel{position:absolute;bottom:64px;right:0;width:280px;background:#1a1f2e;border:1px solid #2a3045;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.5);overflow:hidden;display:none}
+.dialer-panel.open{display:block}
+.dialer-header{padding:14px 16px;border-bottom:1px solid #2a3045;display:flex;align-items:center;justify-content:space-between}
+.dialer-title{font-size:13px;font-weight:600;color:white}
+.dialer-status{font-size:10px;font-weight:500;padding:2px 8px;border-radius:99px;background:#1e2233;color:#6b7280}
+.dialer-status.ready{background:#1e2d1e;color:#22c55e}
+.dialer-status.calling{background:#2d1e1e;color:#ef4444}
+.dialer-lead{padding:12px 16px;border-bottom:1px solid #2a3045;background:#242838}
+.dialer-lead-name{font-size:12px;font-weight:600;color:white;margin-bottom:2px}
+.dialer-lead-num{font-size:11px;color:#9ca3af}
+.dialer-number{padding:12px 16px}
+.dialer-number label{font-size:9px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:5px}
+.dialer-number input{width:100%;background:#242838;border:1px solid #2a3045;border-radius:8px;padding:7px 10px;font-size:13px;color:white;font-family:'Outfit',sans-serif}
+.dialer-number input:focus{outline:none;border-color:#4f6ef7}
+.dialer-timer{text-align:center;font-size:22px;font-weight:700;color:white;padding:8px 0;display:none}
+.dialer-controls{display:flex;gap:8px;padding:12px 16px;justify-content:center}
+.dial-ctrl{width:44px;height:44px;border-radius:50%;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;transition:all .15s}
+.dial-call{background:#22c55e;color:white;width:52px;height:52px;font-size:20px}
+.dial-call:hover{background:#16a34a}
+.dial-hangup{background:#ef4444;color:white;width:52px;height:52px;font-size:20px;display:none}
+.dial-hangup:hover{background:#dc2626}
+.dial-mute{background:#2a3045;color:#9ca3af;display:none}
+.dial-mute.muted{background:#ef4444;color:white}
+.dialer-note{padding:0 16px 12px}
+.dialer-note textarea{width:100%;background:#242838;border:1px solid #2a3045;border-radius:8px;padding:7px 10px;font-size:11px;font-family:'Outfit',sans-serif;color:white;resize:none;min-height:56px;display:none}
+.dialer-note textarea:focus{outline:none;border-color:#4f6ef7}
+.dialer-note-actions{display:none;justify-content:flex-end;gap:6px;margin-top:6px}
+.dialer-save{background:#4f6ef7;color:white;border:none;border-radius:6px;padding:4px 12px;font-size:11px;font-weight:600;cursor:pointer}
+.dialer-skip{background:transparent;color:#6b7280;border:none;font-size:11px;cursor:pointer;padding:4px 8px}
+.call-btn{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:4px;font-size:10px;font-weight:500;cursor:pointer;border:1px solid #22c55e;background:rgba(34,197,94,0.1);color:#22c55e;font-family:'Outfit',sans-serif;transition:all .12s;white-space:nowrap}
+.call-btn:hover{background:#22c55e;color:white}
+
 </style>
 </head>
 <body>
@@ -2064,9 +2102,191 @@ let usingCloud=false;
     if(flash){flash.textContent='Offline mode';flash.className='save-flash offline';flash.style.opacity='1';setTimeout(()=>flash.style.opacity='0',4000);}
   }
 })();
+
+// ── TWILIO DIALER ─────────────────────────────────────────
+let twilioDevice=null,activeCall=null,dialerOpen=false,callTimer=null,callSeconds=0,currentCallLeadId=null,isMuted=false;
+
+async function initTwilio(){
+  try{
+    const res=await fetch('/api/twilio-token',{method:'POST',headers:{'Content-Type':'application/json'}});
+    const data=await res.json();
+    if(!data.token){setDialerStatus('Token error','');return;}
+    const {Device}=Twilio;
+    twilioDevice=new Device(data.token,{codecPreferences:['opus','pcmu']});
+    twilioDevice.on('error',(e)=>{console.error('Twilio:',e);setDialerStatus('Error','');});
+    await twilioDevice.register();
+    setDialerStatus('Ready','ready');
+  }catch(e){console.error('Twilio init:',e);setDialerStatus('Unavailable','');}
+}
+
+function toggleDialer(){
+  dialerOpen=!dialerOpen;
+  document.getElementById('dialer-panel').classList.toggle('open',dialerOpen);
+  if(dialerOpen&&!twilioDevice)initTwilio();
+}
+
+function openDialerForLead(leadId,name,phone){
+  currentCallLeadId=leadId;dialerOpen=true;
+  document.getElementById('dialer-panel').classList.add('open');
+  document.getElementById('dialer-lead-info').style.display='block';
+  document.getElementById('dialer-lead-name').textContent=name;
+  document.getElementById('dialer-lead-num').textContent=phone;
+  document.getElementById('dialer-input').value=phone;
+  document.getElementById('dialer-number-wrap').style.display='none';
+  if(!twilioDevice)initTwilio();
+}
+
+async function dialerCall(){
+  const num=document.getElementById('dialer-input').value.replace(/[^0-9+]/g,'');
+  if(!num){alert('Enter a phone number');return;}
+  if(!twilioDevice){await initTwilio();}
+  try{
+    setDialerStatus('Calling...','calling');
+    const call=await twilioDevice.connect({params:{To:num}});
+    activeCall=call;
+    call.on('accept',onCallConnected);
+    call.on('disconnect',onCallEnded);
+    call.on('error',(e)=>{console.error(e);onCallEnded();});
+  }catch(e){console.error(e);setDialerStatus('Failed','');}
+}
+
+function onCallConnected(){
+  setDialerStatus('On call','calling');
+  document.getElementById('dial-call-btn').style.display='none';
+  document.getElementById('dial-hangup-btn').style.display='flex';
+  document.getElementById('dial-mute-btn').style.display='flex';
+  document.getElementById('dialer-timer').style.display='block';
+  document.getElementById('dialer-toggle-btn').classList.add('active');
+  callSeconds=0;
+  callTimer=setInterval(()=>{
+    callSeconds++;
+    const m=Math.floor(callSeconds/60),s=callSeconds%60;
+    document.getElementById('dialer-timer').textContent=m+':'+(s<10?'0':'')+s;
+  },1000);
+}
+
+function onCallEnded(){
+  clearInterval(callTimer);
+  document.getElementById('dial-call-btn').style.display='flex';
+  document.getElementById('dial-hangup-btn').style.display='none';
+  document.getElementById('dial-mute-btn').style.display='none';
+  document.getElementById('dialer-timer').style.display='none';
+  document.getElementById('dialer-toggle-btn').classList.remove('active');
+  isMuted=false;
+  document.getElementById('dialer-note-text').style.display='block';
+  document.getElementById('dialer-note-actions').style.display='flex';
+  document.getElementById('dialer-note-text').value='';
+  document.getElementById('dialer-note-text').focus();
+  setDialerStatus('Ready','ready');
+}
+
+function dialerHangup(){if(activeCall){activeCall.disconnect();activeCall=null;}}
+
+function dialerMute(){
+  if(!activeCall)return;
+  isMuted=!isMuted;activeCall.mute(isMuted);
+  document.getElementById('dial-mute-btn').classList.toggle('muted',isMuted);
+}
+
+async function dialerSaveNote(){
+  const text=document.getElementById('dialer-note-text').value.trim();
+  const m=Math.floor(callSeconds/60),s=callSeconds%60;
+  const durStr=m+'m '+(s<10?'0':'')+s+'s';
+  let noteText='Call — '+durStr;
+  if(text)noteText+=': '+text;
+  if(currentCallLeadId){
+    const lead=leads.find(l=>l.id===currentCallLeadId);
+    if(lead){
+      if(!lead.notes)lead.notes=[];
+      lead.notes.unshift({id:Date.now(),date:todayStr(),text:noteText});
+      lead.attempts=(lead.attempts||0)+1;
+      await save(lead);
+    }
+  }
+  document.getElementById('dialer-note-text').style.display='none';
+  document.getElementById('dialer-note-actions').style.display='none';
+}
+
+function dialerSkipNote(){
+  document.getElementById('dialer-note-text').style.display='none';
+  document.getElementById('dialer-note-actions').style.display='none';
+}
+
+function setDialerStatus(text,cls){
+  const el=document.getElementById('dialer-status');
+  if(el){el.textContent=text;el.className='dialer-status '+cls;}
+}
+
+setTimeout(initTwilio,2000);
+
+
 </script>
+
+<div class="dialer-widget" id="dialer-widget">
+  <div class="dialer-panel" id="dialer-panel">
+    <div class="dialer-header">
+      <span class="dialer-title">Dialer</span>
+      <span class="dialer-status" id="dialer-status">Initializing...</span>
+    </div>
+    <div class="dialer-lead" id="dialer-lead-info" style="display:none">
+      <div class="dialer-lead-name" id="dialer-lead-name"></div>
+      <div class="dialer-lead-num" id="dialer-lead-num"></div>
+    </div>
+    <div class="dialer-number" id="dialer-number-wrap">
+      <label>Phone number</label>
+      <input type="tel" id="dialer-input" placeholder="+1 (213) 555-0100">
+    </div>
+    <div class="dialer-timer" id="dialer-timer">0:00</div>
+    <div class="dialer-controls">
+      <button class="dial-ctrl dial-mute" id="dial-mute-btn" onclick="dialerMute()">M</button>
+      <button class="dial-ctrl dial-call" id="dial-call-btn" onclick="dialerCall()">C</button>
+      <button class="dial-ctrl dial-hangup" id="dial-hangup-btn" onclick="dialerHangup()">X</button>
+    </div>
+    <div class="dialer-note" id="dialer-note-wrap">
+      <textarea id="dialer-note-text" placeholder="Add call notes..."></textarea>
+      <div class="dialer-note-actions" id="dialer-note-actions">
+        <button class="dialer-skip" onclick="dialerSkipNote()">Skip</button>
+        <button class="dialer-save" onclick="dialerSaveNote()">Save note</button>
+      </div>
+    </div>
+  </div>
+  <button class="dialer-btn" id="dialer-toggle-btn" onclick="toggleDialer()">C</button>
+</div>
+
 </body>
 </html>
+
+
+<div class="dialer-widget" id="dialer-widget">
+  <div class="dialer-panel" id="dialer-panel">
+    <div class="dialer-header">
+      <span class="dialer-title">Dialer</span>
+      <span class="dialer-status" id="dialer-status">Initializing...</span>
+    </div>
+    <div class="dialer-lead" id="dialer-lead-info" style="display:none">
+      <div class="dialer-lead-name" id="dialer-lead-name"></div>
+      <div class="dialer-lead-num" id="dialer-lead-num"></div>
+    </div>
+    <div class="dialer-number" id="dialer-number-wrap">
+      <label>Phone number</label>
+      <input type="tel" id="dialer-input" placeholder="+1 (213) 555-0100">
+    </div>
+    <div class="dialer-timer" id="dialer-timer">0:00</div>
+    <div class="dialer-controls">
+      <button class="dial-ctrl dial-mute" id="dial-mute-btn" onclick="dialerMute()">M</button>
+      <button class="dial-ctrl dial-call" id="dial-call-btn" onclick="dialerCall()">C</button>
+      <button class="dial-ctrl dial-hangup" id="dial-hangup-btn" onclick="dialerHangup()">X</button>
+    </div>
+    <div class="dialer-note" id="dialer-note-wrap">
+      <textarea id="dialer-note-text" placeholder="Add call notes..."></textarea>
+      <div class="dialer-note-actions" id="dialer-note-actions">
+        <button class="dialer-skip" onclick="dialerSkipNote()">Skip</button>
+        <button class="dialer-save" onclick="dialerSaveNote()">Save note</button>
+      </div>
+    </div>
+  </div>
+  <button class="dialer-btn" id="dialer-toggle-btn" onclick="toggleDialer()">C</button>
+</div>
 
 </body>
 </html>
