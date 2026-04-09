@@ -6,18 +6,29 @@ export default function handler(req, res) {
   res.setHeader('Content-Type', 'text/xml');
   res.setHeader('Access-Control-Allow-Origin', '*');
 
-  if (to && to.startsWith('+')) {
-    // Dial your cell first, then bridge to the lead
+  if (to && to.startsWith('+1626')) {
+    // Inbound call to your Twilio number — forward to your cell
+    res.send(`<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Dial callerId="${from}">
+    <Number>${yourCell}</Number>
+  </Dial>
+</Response>`);
+  } else if (to && to.startsWith('+')) {
+    // Outbound call from browser to lead
     res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial callerId="${from}" record="record-from-ringing" recordingStatusCallback="/api/recording-status">
-    <Number url="/api/bridge?to=${encodeURIComponent(to)}">${yourCell}</Number>
+    <Number>${to}</Number>
   </Dial>
 </Response>`);
   } else {
+    // Inbound call with no specific destination — forward to cell
     res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Say>Invalid number.</Say>
+  <Dial callerId="${from}">
+    <Number>${yourCell}</Number>
+  </Dial>
 </Response>`);
   }
 }
