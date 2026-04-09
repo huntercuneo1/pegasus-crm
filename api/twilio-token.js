@@ -1,7 +1,8 @@
 const crypto = require('crypto');
 
 function base64url(str) {
-  return Buffer.from(str).toString('base64').replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_');
+  return Buffer.from(str).toString('base64')
+    .replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_');
 }
 
 function createJWT(accountSid, secret, appSid) {
@@ -22,11 +23,13 @@ function createJWT(accountSid, secret, appSid) {
     }
   }));
   const unsigned = `${header}.${payload}`;
-  const sig = crypto.createHmac('sha256', secret).update(unsigned).digest('base64').replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_');
+  const sig = crypto.createHmac('sha256', secret)
+    .update(unsigned).digest('base64')
+    .replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_');
   return `${unsigned}.${sig}`;
 }
 
-export default function handler(req, res) {
+module.exports = function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Content-Type', 'application/json');
@@ -46,4 +49,4 @@ export default function handler(req, res) {
   } catch(err) {
     res.status(500).json({ error: err.message });
   }
-}
+};
