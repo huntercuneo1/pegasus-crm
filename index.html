@@ -2269,7 +2269,19 @@ function setDialerStatus(text,cls){
   if(el){el.textContent=text;el.className='dialer-status '+cls;}
 }
 
-setTimeout(initTwilio,2000);
+async function connectDialer(){
+  document.getElementById('dialer-connect-wrap').style.display='none';
+  // Request microphone permission explicitly first
+  try{
+    await navigator.mediaDevices.getUserMedia({audio:true});
+    setDialerStatus('Mic allowed','ready');
+  }catch(e){
+    setDialerStatus('Allow microphone!','');
+    document.getElementById('dialer-connect-wrap').style.display='block';
+    return;
+  }
+  await initTwilio();
+}
 
 
 </script>
@@ -2278,7 +2290,10 @@ setTimeout(initTwilio,2000);
   <div class="dialer-panel" id="dialer-panel">
     <div class="dialer-header">
       <span class="dialer-title">Dialer</span>
-      <span class="dialer-status" id="dialer-status">Initializing...</span>
+      <span class="dialer-status" id="dialer-status">Click Connect</span>
+    </div>
+    <div id="dialer-connect-wrap" style="padding:10px 16px;border-bottom:1px solid #2a3045">
+      <button onclick="connectDialer()" style="width:100%;background:#4f6ef7;color:white;border:none;border-radius:8px;padding:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:Outfit,sans-serif">Connect Dialer</button>
     </div>
     <div class="dialer-lead" id="dialer-lead-info" style="display:none">
       <div class="dialer-lead-name" id="dialer-lead-name"></div>
@@ -2313,7 +2328,10 @@ setTimeout(initTwilio,2000);
   <div class="dialer-panel" id="dialer-panel">
     <div class="dialer-header">
       <span class="dialer-title">Dialer</span>
-      <span class="dialer-status" id="dialer-status">Initializing...</span>
+      <span class="dialer-status" id="dialer-status">Click Connect</span>
+    </div>
+    <div id="dialer-connect-wrap" style="padding:10px 16px;border-bottom:1px solid #2a3045">
+      <button onclick="connectDialer()" style="width:100%;background:#4f6ef7;color:white;border:none;border-radius:8px;padding:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:Outfit,sans-serif">Connect Dialer</button>
     </div>
     <div class="dialer-lead" id="dialer-lead-info" style="display:none">
       <div class="dialer-lead-name" id="dialer-lead-name"></div>
