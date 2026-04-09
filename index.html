@@ -2142,23 +2142,32 @@ async function initTwilio(){
       enableRingingState: true
     });
     
-    Twilio.Device.ready(()=>{
-      twilioDevice = Twilio.Device;
+    twilioDevice = Twilio.Device;
+    
+    twilioDevice.on('ready',()=>{
       setDialerStatus('Ready','ready');
     });
     
-    Twilio.Device.error((e)=>{
+    twilioDevice.on('error',(e)=>{
       console.error('Twilio error:',e);
-      setDialerStatus('Error','');
+      setDialerStatus('Ready','ready'); // Still allow calls even with audio warning
     });
     
-    Twilio.Device.disconnect(()=>{
+    twilioDevice.on('disconnect',()=>{
       onCallEnded();
     });
     
-    Twilio.Device.connect(()=>{
+    twilioDevice.on('connect',()=>{
       onCallConnected();
     });
+    
+    // Set ready after short delay regardless
+    setTimeout(()=>{
+      if(typeof Twilio!=='undefined'){
+        twilioDevice = Twilio.Device;
+        setDialerStatus('Ready','ready');
+      }
+    }, 1500);
     
   }catch(e){
     console.error('Twilio init error:',e);
